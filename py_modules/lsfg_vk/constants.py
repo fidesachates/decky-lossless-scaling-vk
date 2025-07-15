@@ -256,7 +256,34 @@ main() {
     # Sync LSFG files
     sync_lsfg_files "$app_id"
     
-    echo "LSFG sync complete. Executing flatpak command: flatpak ${flatpak_args[*]}"
+    echo "LSFG sync complete. Setting up LSFG environment variables..."
+    
+    # Try to source environment variables from the regular lsfg script if it exists
+    if [[ -f "$HOME/lsfg" ]]; then
+        echo "Loading LSFG configuration from ~/lsfg script..."
+        # Extract export statements from the lsfg script
+        source <(grep "^export " "$HOME/lsfg" 2>/dev/null || true)
+    else
+        echo "Using default LSFG configuration..."
+        # Set up default LSFG environment variables
+        export ENABLE_LSFG=1
+        export LSFG_MULTIPLIER=2
+        export LSFG_FLOW_SCALE=1.0
+        # export LSFG_HDR=1
+        # export LSFG_PERF_MODE=1
+        # export MESA_VK_WSI_PRESENT_MODE=immediate # - disable vsync
+    fi
+    
+    # Show which LSFG settings are active
+    echo "Active LSFG settings:"
+    [[ -n "$ENABLE_LSFG" ]] && echo "  ENABLE_LSFG=$ENABLE_LSFG"
+    [[ -n "$LSFG_MULTIPLIER" ]] && echo "  LSFG_MULTIPLIER=$LSFG_MULTIPLIER"
+    [[ -n "$LSFG_FLOW_SCALE" ]] && echo "  LSFG_FLOW_SCALE=$LSFG_FLOW_SCALE"
+    [[ -n "$LSFG_HDR" ]] && echo "  LSFG_HDR=$LSFG_HDR"
+    [[ -n "$LSFG_PERF_MODE" ]] && echo "  LSFG_PERF_MODE=$LSFG_PERF_MODE"
+    [[ -n "$MESA_VK_WSI_PRESENT_MODE" ]] && echo "  MESA_VK_WSI_PRESENT_MODE=$MESA_VK_WSI_PRESENT_MODE"
+    
+    echo "Executing flatpak command: flatpak ${flatpak_args[*]}"
     
     # Execute flatpak with the constructed arguments
     exec /usr/bin/flatpak "${flatpak_args[@]}"
