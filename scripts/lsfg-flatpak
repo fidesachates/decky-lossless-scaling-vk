@@ -1,0 +1,181 @@
+#!/bin/bash
+
+# lsfg-flatpak - Sync LSFG files between host and flatpak environment
+# Usage: ~/lsfg-flatpak %command%
+# Place this script at ~/lsfg-flatpak and use it in Steam launch options for flatpak games
+
+set -euo pipefail
+
+# Configuration
+HOST_HOME="${HOME}"
+FLATPAK_HOME="${HOST_HOME}"
+
+# LSFG file paths on host
+HOST_LIB_DIR="${HOST_HOME}/.local/lib"
+HOST_SHARE_DIR="${HOST_HOME}/.local/share/vulkan/implicit_layer.d"
+HOST_SCRIPT="${HOST_HOME}/lsfg"
+
+HOST_LIB_FILE="${HOST_LIB_DIR}/liblsfg-vk.so"
+HOST_JSON_FILE="${HOST_SHARE_DIR}/VkLayer_LS_frame_generation.json"
+
+# LSFG file paths in flatpak (same as host since we're using the same HOME)
+FLATPAK_LIB_DIR="${FLATPAK_HOME}/.local/lib"
+FLATPAK_SHARE_DIR="${FLATPAK_HOME}/.local/share/vulkan/implicit_layer.d"
+FLATPAK_SCRIPT="${FLATPAK_HOME}/lsfg"
+
+FLATPAK_LIB_FILE="${FLATPAK_LIB_DIR}/liblsfg-vk.so"
+FLATPAK_JSON_FILE="${FLATPAK_SHARE_DIR}/VkLayer_LS_frame_generation.json"
+
+# Logging function
+log() {
+    echo "[lsfg-flatpak] $*" >&2
+}
+
+# Function to compute SHA256 hash of a file
+get_file_hash() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        sha256sum "$file" | cut -d' ' -f1
+    else
+        echo ""
+    fi
+}
+
+# Function to ensure directory exists
+ensure_directory() {
+    local dir="$1"
+    if [[ ! -d "$dir" ]]; then
+        log "Creating directory: $dir"
+        mkdir -p "$dir"
+    fi
+}
+
+# Function to copy file if source exists
+copy_file() {
+    local src="$1"
+    local dst="$2"
+    
+    if [[ -f "$src" ]]; then
+        log "Copying $src -> $dst"
+        cp "$src" "$dst"
+        # Preserve executable permissions for script files
+        if [[ "$src" == *"/lsfg" ]]; then
+            chmod +x "$dst"
+        fi
+        return 0
+    else
+        log "Warning: Source file not found: $src"
+        return 1
+    fi
+}
+
+# Function to sync a file from host to flatpak if needed
+sync_file() {
+    local host_file="$1"
+    local flatpak_file="$2"
+    local file_type="$3"
+    
+    # Check if host file exists
+    if [[ ! -f "$host_file" ]]; then
+        log "Warning: $file_type not found on host at $host_file"
+        return 1
+    fi
+    
+    # Ensure destination directory exists
+    local flatpak_dir
+    flatpak_dir="$(dirname "$flatpak_file")"
+    ensure_directory "$flatpak_dir"
+    
+    # Check if flatpak file exists
+    if [[ ! -f "$flatpak_file" ]]; then
+        log "$file_type missing in flatpak environment, copying from host"
+        copy_file "$host_file" "$flatpak_file"
+        return 0
+    fi
+    
+    # Both files exist, compare checksums
+    local host_hash
+    local flatpak_hash
+    
+    host_hash="$(get_file_hash "$host_file")"
+    flatpak_hash="$(get_file_hash "$flatpak_file")"
+    
+    if [[ "$host_hash" != "$flatpak_hash" ]]; then
+        log "$file_type differs between host and flatpak (host: ${host_hash:0:8}..., flatpak: ${flatpak_hash:0:8}...), updating flatpak"
+        copy_file "$host_file" "$flatpak_file"
+    else
+        log "$file_type is up to date in flatpak environment"
+    fi
+    
+    return 0
+}
+
+# Main sync function
+sync_lsfg_files() {
+    log "Starting LSFG file sync for flatpak environment"
+    
+    # Sync library file
+    sync_file "$HOST_LIB_FILE" "$FLATPAK_LIB_FILE" "LSFG library"
+    
+    # Sync JSON layer file
+    sync_file "$HOST_JSON_FILE" "$FLATPAK_JSON_FILE" "LSFG Vulkan layer"
+    
+    # Sync script file (optional, might not always exist)
+    if [[ -f "$HOST_SCRIPT" ]]; then
+        sync_file "$HOST_SCRIPT" "$FLATPAK_SCRIPT" "LSFG script"
+    else
+        log "LSFG script not found on host at $HOST_SCRIPT (this is OK if using direct env vars)"
+    fi
+    
+    log "LSFG file sync completed"
+}
+
+# Function to check if LSFG is properly installed on host
+check_host_installation() {
+    local missing_files=()
+    
+    if [[ ! -f "$HOST_LIB_FILE" ]]; then
+        missing_files+=("$HOST_LIB_FILE")
+    fi
+    
+    if [[ ! -f "$HOST_JSON_FILE" ]]; then
+        missing_files+=("$HOST_JSON_FILE")
+    fi
+    
+    if [[ ${#missing_files[@]} -gt 0 ]]; then
+        log "Error: LSFG is not properly installed on host. Missing files:"
+        for file in "${missing_files[@]}"; do
+            log "  - $file"
+        done
+        log "Please install LSFG using the Decky plugin first."
+        return 1
+    fi
+    
+    return 0
+}
+
+# Main execution
+main() {
+    log "lsfg-flatpak starting (args: $*)"
+    
+    # Check if LSFG is installed on host
+    if ! check_host_installation; then
+        log "Exiting due to missing LSFG installation on host"
+        exit 1
+    fi
+    
+    # Sync LSFG files to flatpak environment
+    sync_lsfg_files
+    
+    # Execute the original command
+    if [[ $# -gt 0 ]]; then
+        log "Executing command: $*"
+        exec "$@"
+    else
+        log "No command provided, exiting"
+        exit 0
+    fi
+}
+
+# Run main function with all arguments
+main "$@"

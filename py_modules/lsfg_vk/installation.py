@@ -12,7 +12,7 @@ from typing import Dict, Any
 from .base_service import BaseService
 from .constants import (
     LIB_FILENAME, JSON_FILENAME, ZIP_FILENAME, BIN_DIR,
-    SO_EXT, JSON_EXT, LSFG_SCRIPT_TEMPLATE,
+    SO_EXT, JSON_EXT, LSFG_SCRIPT_TEMPLATE, LSFG_FLATPAK_SCRIPT_TEMPLATE,
     DEFAULT_MULTIPLIER, DEFAULT_FLOW_SCALE, DEFAULT_ENABLE_LSFG,
     DEFAULT_HDR, DEFAULT_PERF_MODE, DEFAULT_IMMEDIATE_MODE
 )
@@ -54,6 +54,9 @@ class InstallationService(BaseService):
             
             # Create the lsfg script
             self._create_lsfg_script()
+            
+            # Create the lsfg-flatpak script
+            self._create_lsfg_flatpak_script()
             
             self.log.info("lsfg-vk installed successfully")
             return {"success": True, "message": "lsfg-vk installed successfully", "error": None}
@@ -118,6 +121,14 @@ class InstallationService(BaseService):
         self._atomic_write(self.lsfg_script_path, script_content, 0o755)
         self.log.info(f"Created executable lsfg script at {self.lsfg_script_path}")
     
+    def _create_lsfg_flatpak_script(self) -> None:
+        """Create the lsfg-flatpak script in home directory"""
+        script_content = LSFG_FLATPAK_SCRIPT_TEMPLATE
+        
+        # Use atomic write to prevent corruption
+        self._atomic_write(self.lsfg_flatpak_script_path, script_content, 0o755)
+        self.log.info(f"Created executable lsfg-flatpak script at {self.lsfg_flatpak_script_path}")
+    
     def check_installation(self) -> InstallationCheckResponse:
         """Check if lsfg-vk is already installed
         
@@ -128,17 +139,20 @@ class InstallationService(BaseService):
             lib_exists = self.lib_file.exists()
             json_exists = self.json_file.exists()
             script_exists = self.lsfg_script_path.exists()
+            flatpak_script_exists = self.lsfg_flatpak_script_path.exists()
             
-            self.log.info(f"Installation check: lib={lib_exists}, json={json_exists}, script={script_exists}")
+            self.log.info(f"Installation check: lib={lib_exists}, json={json_exists}, script={script_exists}, flatpak_script={flatpak_script_exists}")
             
             return {
                 "installed": lib_exists and json_exists,
                 "lib_exists": lib_exists,
                 "json_exists": json_exists,
                 "script_exists": script_exists,
+                "flatpak_script_exists": flatpak_script_exists,
                 "lib_path": str(self.lib_file),
                 "json_path": str(self.json_file),
                 "script_path": str(self.lsfg_script_path),
+                "flatpak_script_path": str(self.lsfg_flatpak_script_path),
                 "error": None
             }
             
@@ -150,9 +164,11 @@ class InstallationService(BaseService):
                 "lib_exists": False,
                 "json_exists": False,
                 "script_exists": False,
+                "flatpak_script_exists": False,
                 "lib_path": str(self.lib_file),
                 "json_path": str(self.json_file),
                 "script_path": str(self.lsfg_script_path),
+                "flatpak_script_path": str(self.lsfg_flatpak_script_path),
                 "error": str(e)
             }
     
@@ -164,7 +180,7 @@ class InstallationService(BaseService):
         """
         try:
             removed_files = []
-            files_to_remove = [self.lib_file, self.json_file, self.lsfg_script_path]
+            files_to_remove = [self.lib_file, self.json_file, self.lsfg_script_path, self.lsfg_flatpak_script_path]
             
             for file_path in files_to_remove:
                 if self._remove_if_exists(file_path):
@@ -203,9 +219,10 @@ class InstallationService(BaseService):
             self.log.info(f"  Library file: {self.lib_file}")
             self.log.info(f"  JSON file: {self.json_file}")
             self.log.info(f"  lsfg script: {self.lsfg_script_path}")
+            self.log.info(f"  lsfg-flatpak script: {self.lsfg_flatpak_script_path}")
             
             removed_files = []
-            files_to_remove = [self.lib_file, self.json_file, self.lsfg_script_path]
+            files_to_remove = [self.lib_file, self.json_file, self.lsfg_script_path, self.lsfg_flatpak_script_path]
             
             for file_path in files_to_remove:
                 try:

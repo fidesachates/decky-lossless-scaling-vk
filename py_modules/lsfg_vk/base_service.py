@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
-from .constants import LOCAL_LIB, LOCAL_SHARE_BASE, VULKAN_LAYER_DIR, SCRIPT_NAME
+from .constants import LOCAL_LIB, LOCAL_SHARE_BASE, VULKAN_LAYER_DIR, SCRIPT_NAME, FLATPAK_SCRIPT_NAME
 
 
 class BaseService:
@@ -31,6 +31,7 @@ class BaseService:
         self.local_lib_dir = self.user_home / LOCAL_LIB
         self.local_share_dir = self.user_home / VULKAN_LAYER_DIR
         self.lsfg_script_path = self.user_home / SCRIPT_NAME
+        self.lsfg_flatpak_script_path = self.user_home / FLATPAK_SCRIPT_NAME
     
     def _ensure_directories(self) -> None:
         """Create necessary directories if they don't exist"""

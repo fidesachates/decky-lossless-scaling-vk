@@ -39,9 +39,11 @@ class InstallationCheckResponse(TypedDict):
     lib_exists: bool
     json_exists: bool
     script_exists: bool
+    flatpak_script_exists: bool
     lib_path: str
     json_path: str
     script_path: str
+    flatpak_script_path: str
     error: Optional[str]
 
 
