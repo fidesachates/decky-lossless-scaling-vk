@@ -46,7 +46,14 @@ LSFG_FLATPAK_SCRIPT_TEMPLATE = """#!/bin/bash
 
 # LSFG Flatpak Sync Script
 # This script synchronizes LSFG files between host and flatpak environments
-# Usage: Add this script to your Steam launch options for flatpak games
+# 
+# Usage in Steam Launch Options:
+# Replace the Target field with this script path and adjust launch options:
+# Target: /home/deck/lsfg-flatpak
+# Launch Options: run com.valvesoftware.Steam %command%
+#
+# Or for non-Steam flatpak shortcuts:
+# ~/lsfg-flatpak com.app.id
 
 set -e
 
@@ -132,12 +139,24 @@ sync_lsfg_files() {
     fi
 }
 
-# Function to detect flatpak app ID
+# Function to detect flatpak app ID from arguments or common locations
 detect_app_id() {
-    # Try to detect from common flatpak app IDs
-    local common_ids=("com.valvesoftware.Steam" "org.prismlauncher.PrismLauncher" "net.lutris.Lutris" "com.heroicgameslauncher.hgl")
+    # Check for common flatpak app IDs in arguments
+    for arg in "$@"; do
+        case "$arg" in
+            com.*|org.*|net.*|io.*|app.*)
+                if [[ "$arg" =~ ^[a-zA-Z0-9_.-]+\\.[a-zA-Z0-9_.-]+\\.[a-zA-Z0-9_.-]+.*$ ]]; then
+                    echo "$arg"
+                    return 0
+                fi
+                ;;
+        esac
+    done
     
-    for app_id in "${{common_ids[@]}}"; do
+    # Try to detect from common flatpak app IDs in filesystem
+    local common_ids=("com.valvesoftware.Steam" "org.prismlauncher.PrismLauncher" "net.lutris.Lutris" "com.heroicgameslauncher.hgl" "com.moonlight_stream.Moonlight")
+    
+    for app_id in "${common_ids[@]}"; do
         if [[ -d "$HOME/.var/app/$app_id" ]]; then
             echo "$app_id"
             return 0
@@ -160,31 +179,67 @@ is_valid_app_id() {
 
 # Main execution
 main() {
-    # Check if we have arguments (the original command to execute)
+    local app_id=""
+    local flatpak_args=()
+    
+    # Parse arguments to find app ID and construct flatpak command
     if [[ $# -eq 0 ]]; then
-        echo "Usage: $0 [flatpak_app_id] [command...]"
-        echo "Example: $0 com.valvesoftware.Steam %command%"
-        echo "If no app_id is provided, the script will try to auto-detect it."
+        echo "LSFG Flatpak Sync Script"
+        echo "Usage: $0 [run] <app_id> [additional_args...]"
+        echo "Example: $0 run com.valvesoftware.Steam"
+        echo "Example: $0 com.valvesoftware.Steam"
         exit 1
     fi
     
-    local app_id=""
-    
-    # Check if first argument looks like a flatpak app ID
-    if is_valid_app_id "$1"; then
-        app_id="$1"
-        shift  # Remove app_id from arguments
-        echo "Using provided flatpak app ID: $app_id"
-    else
-        # Try to auto-detect app ID
-        if app_id=$(detect_app_id); then
-            echo "Auto-detected flatpak app ID: $app_id"
+    # Handle different argument patterns
+    if [[ "$1" == "run" ]]; then
+        # Pattern: ~/lsfg-flatpak run com.app.id [args...]
+        shift
+        if [[ $# -gt 0 ]] && is_valid_app_id "$1"; then
+            app_id="$1"
+            shift
+            flatpak_args=("run" "$app_id" "$@")
         else
-            echo "Could not detect flatpak app ID and none was provided."
-            echo "Usage: $0 [flatpak_app_id] [command...]"
+            echo "Error: 'run' command requires a valid flatpak app ID"
+            if [[ $# -gt 0 ]]; then
+                echo "Provided argument '$1' is not a valid flatpak app ID"
+            fi
+            exit 1
+        fi
+    elif is_valid_app_id "$1"; then
+        # Pattern: ~/lsfg-flatpak com.app.id [args...]
+        app_id="$1"
+        shift
+        flatpak_args=("run" "$app_id" "$@")
+    else
+        # Try to detect app ID from all arguments
+        if app_id=$(detect_app_id "$@"); then
+            echo "Auto-detected flatpak app ID: $app_id"
+            # Remove the detected app_id from arguments and construct flatpak command
+            local new_args=()
+            local found_app_id=false
+            for arg in "$@"; do
+                if [[ "$arg" == "$app_id" ]]; then
+                    found_app_id=true
+                elif [[ "$arg" == "run" ]] && [[ "$found_app_id" == false ]]; then
+                    # Keep 'run' if it comes before the app_id
+                    new_args+=("$arg")
+                else
+                    new_args+=("$arg")
+                fi
+            done
+            
+            # Construct flatpak command
+            if [[ "${new_args[0]}" == "run" ]]; then
+                flatpak_args=("run" "$app_id" "${new_args[@]:1}")
+            else
+                flatpak_args=("run" "$app_id" "${new_args[@]}")
+            fi
+        else
+            echo "Could not detect flatpak app ID from arguments: $*"
             echo "Available flatpak apps:"
-            if ls "$HOME/.var/app/" 2>/dev/null; then
-                ls "$HOME/.var/app/"
+            if ls "$HOME/.var/app/" 2>/dev/null | head -10; then
+                echo "..."
             else
                 echo "No flatpak apps found"
             fi
@@ -192,19 +247,19 @@ main() {
         fi
     fi
     
-    # Verify the app directory exists
+    # Verify the app directory exists (or create path for it)
     if [[ ! -d "$HOME/.var/app/$app_id" ]]; then
-        echo "Error: Flatpak app directory not found: $HOME/.var/app/$app_id"
-        exit 1
+        echo "Warning: Flatpak app directory not found: $HOME/.var/app/$app_id"
+        echo "This may be normal if the app hasn't been run yet."
     fi
     
     # Sync LSFG files
     sync_lsfg_files "$app_id"
     
-    echo "LSFG sync complete. Executing original command..."
+    echo "LSFG sync complete. Executing flatpak command: flatpak ${flatpak_args[*]}"
     
-    # Execute the original command
-    exec "$@"
+    # Execute flatpak with the constructed arguments
+    exec /usr/bin/flatpak "${flatpak_args[@]}"
 }
 
 # Run main function with all arguments
